@@ -1,4 +1,4 @@
 #!/bin/bash
 
 a=`md5sum $1`
-echo "$a" >>md5.c
+echo "$a" >>md5.txt
