@@ -79,7 +79,7 @@ void Send_file(int c,char *filename)//给客户端发送
             send(c,"cli file size err!",18,0);
             return;
         }
-        lseek(fd,d_size,SEEK_SET); //将文件光标移到客户端文件大小的地方
+        lseek(fd,d_size,SEEK_SET); //将文件光标移到客户端文件大小的地方,进行传输
         int d_num=0;
         int d_curr_size=0;
         char d_sendbuff[512]={0};
@@ -140,7 +140,7 @@ void Recv_file(int c,char *filename)//服务端接收文件
     }
     char *s=recv_buff;
     s+=3;//从客户端的md5的值开始
-    int md5_fd=open("md5.c",O_RDONLY,0600);
+    int md5_fd=open("md5.txt",O_RDONLY,0600);
     char md5_buff[128]={0};
     read(md5_fd,md5_buff,128);
     char *ss=strtok(md5_buff,"\n");//得到服务器md5的值
@@ -168,9 +168,9 @@ void Recv_file(int c,char *filename)//服务端接收文件
         printf("Err!\n");
         return;
     }
-     int file_size=atoi(buff+3);//输出一下文件大小
-     printf("recv filesizes=%d\n",file_size);
-
+    int file_size=atoi(buff+3);//输出一下文件大小
+    printf("recv filesizes=%d\n",file_size);
+    
     //下载到本地，如果是空文件直接就本地创建
     int fd=open(filename,O_WRONLY|O_CREAT,0600);
     if(fd==-1)
@@ -178,9 +178,18 @@ void Recv_file(int c,char *filename)//服务端接收文件
         send(c,"open err!",9,0);
         return ;
     }
-    send(c,"ok",2,0);//给客户端回ok表示自己可以下载了
-    
+    if(file_size==0){
+        printf("\nrecv filesize==0 from cli over!\n");
+        printf("------------\n");
+        close(fd);
+        char md5[128]={0};//文件上传完毕之后把文件的md5值存进md5.c文件中
+        sprintf(md5,"./my.sh %s",filename);
+        system(md5);
+        return;
+    }
+
     //如果size不是0，开始接收
+    send(c,"ok",2,0);//给客户端回ok表示自己可以下载了
     char data[512]={0};
     int nums=0;//每次接收的大小
     int curr_size=0;//当前接收的文件大小
@@ -206,11 +215,11 @@ void Recv_file(int c,char *filename)//服务端接收文件
 }
 
 void ExeCommd(int c,char * cmd,char * myargv[])//命令对文件操作
-{
+{                                             //调系统命令
      int pipefd[2];
      if(pipe(pipefd)==-1)
      {
-           //服务端自己的错误
+        //服务端自己的错误
          send_errpipe(c);
          return ;
      }
@@ -251,7 +260,7 @@ char * get_cmd(char buff[],char *myargv[])//解析命令
         myargv[i++]=s;
         s=strtok_r(NULL," ",&ptr);//沿着原来位置继续分割
     }
-    return myargv[0];
+    return myargv[0];//比如 get a.c  返回的是get 
 }
 void *work_fun(void *arg)//工作线程
 {
@@ -290,18 +299,7 @@ void *work_fun(void *arg)//工作线程
         {
             Recv_file(c,myargv[1]);//此时已经都收到客户端发来的命令了
         }
-        else if(strcmp(cmd,"rm")==0)//remove删除文件
-        {
-            if(remove(cmd)==0)
-            {
-                printf("%s has removed\n",cmd);
-            }
-            else
-            {
-                perror("remove err\n");
-            }
-        }
-        else   //执行命令 ls  ..
+        else   //执行命令 ls   rm  ps-f ..
         {
             //fork + exec
             ExeCommd(c,cmd,myargv);
