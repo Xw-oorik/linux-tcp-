@@ -8,8 +8,32 @@
 #include <arpa/inet.h>
 #include<sys/types.h>
 #include<fcntl.h>
-int connect_ser();//连接
+#include <signal.h>
 
+int connect_ser()//连接
+{
+    int sockfd=socket(AF_INET,SOCK_STREAM,0);
+    if(sockfd==-1)
+    {
+        printf("socket err\n");
+        return -1;
+    }
+    struct sockaddr_in saddr;
+    memset(&saddr,0,sizeof(saddr));
+    saddr.sin_family=AF_INET;
+    saddr.sin_port=htons(6600);
+    saddr.sin_addr.s_addr=inet_addr("127.0.0.1");//回环地址
+	//向服务器发起连接请求。
+    
+    int res=connect(sockfd,(struct sockaddr*)&saddr,sizeof(saddr));
+    if(res==-1)
+    {
+        printf("connect ser failed\n");
+        return -1;
+    }
+
+    return sockfd;
+}
 char *get_cmd(char buff[],char *myargv[])//解析
 {
      if(buff==NULL||myargv==NULL){
@@ -17,18 +41,18 @@ char *get_cmd(char buff[],char *myargv[])//解析
       }
      //分割
     char *ptr=NULL;
-    char *s=strtok(buff," ");//linux下strtok线程安全的版本
+    char *s=strtok_r(buff," ",&ptr);//线程安全的版本strtok_r
     int i=0;
     while(s!=NULL)
     {
         myargv[i++]=s;
-        s=strtok(NULL," ");//沿着原来位置继续分割
+         s=strtok_r(NULL," ",&ptr);//沿着原来位置继续分割
     }
     return myargv[0];
 }
-void CliExeCommand(int c,char *cmd,char *cmd_buff)
+void CliExeCommand(int c,char *cmd_buff)
 {
-      send(c,cmd,strlen(cmd_buff),0);
+           send(c,cmd_buff,strlen(cmd_buff),0);//让服务器端recv  打印recv buff=
 
             //接受结果
             char recv_buff[1024]={0};
@@ -178,7 +202,7 @@ void upload_file(int c,char *filename,char *cmd_str)//上传文件
     sprintf(m_buff,"./my.sh %s",filename);
     system(m_buff);//计算文件的md5写入md5.c文件里
     //
-    int md5_fd=open("md5.c",O_RDONLY|O_CREAT);
+    int md5_fd=open("md5.txt",O_RDONLY|O_CREAT);
     if(md5_fd==-1)
     {
         printf("md5_fd err!\n");
@@ -190,7 +214,7 @@ void upload_file(int c,char *filename,char *cmd_str)//上传文件
   
     char buff[128]={0};
     close(md5_fd);
-    system("rm md5.c");//得到文件的md5之后就把md5的文件删除
+    system("rm md5.txt");//得到文件的md5之后就把md5的文件删除
    
     sprintf(buff,"ok#%s",s);
     send(c,buff,strlen(buff),0);//把ok#md5的值发给服务器
@@ -217,16 +241,18 @@ void upload_file(int c,char *filename,char *cmd_str)//上传文件
      //开始获取文件大小
     int file_size=lseek(fd,0,SEEK_END);
     lseek(fd,0,SEEK_SET);
-    if(file_size==0)//如果是空文件，直接返回
-    {
-        printf("local filesize is 0 upload over!\n");
-        return ;
-    }
+  
     char buff_status[128]={0};
     sprintf(buff_status,"ok#%d",file_size);//ok#文件大小
     printf("upload to server file size=%d\n",file_size);
     printf("respond to server:%s\n",buff_status);
     send(c,buff_status,strlen(buff_status),0);//告诉一下服务器ok#文件大小
+
+    if(file_size==0)//如果是空文件，直接返回
+    {
+        printf("local filesize is 0 upload over!\n");
+        return ;
+    }
 
     //接收一下服务器回复的ok
     char recv_buff[128]={0};
@@ -258,8 +284,11 @@ void upload_file(int c,char *filename,char *cmd_str)//上传文件
     close(fd);
     return ;
 }
+
+
 int main()
 {
+   
     int c=connect_ser();
     if(c==-1)
     {
@@ -298,41 +327,13 @@ int main()
             //上传
             upload_file(c,myargv[1],cmd_buff);
         }
-        else if(strcmp(cmd,"rm")==0)//删除文件
-        {
-            send(c,cmd_buff,strlen(cmd_buff),0);;
-        }
         else
         {
             //执行命令
             //发命令
-            CliExeCommand( c,cmd,cmd_buff);
+            CliExeCommand( c,cmd_buff);
         } 
     }
     close(c);
 }
 
-int connect_ser()
-{
-    int sockfd=socket(AF_INET,SOCK_STREAM,0);
-    if(sockfd==-1)
-    {
-        printf("socket err\n");
-        return -1;
-    }
-    struct sockaddr_in saddr;
-    memset(&saddr,0,sizeof(saddr));
-    saddr.sin_family=AF_INET;
-    saddr.sin_port=htons(6600);
-    saddr.sin_addr.s_addr=inet_addr("127.0.0.1");//回环地址
-	//向服务器发起连接请求。
-    
-    int res=connect(sockfd,(struct sockaddr*)&saddr,sizeof(saddr));
-    if(res==-1)
-    {
-        printf("connect ser failed\n");
-        return -1;
-    }
-
-    return sockfd;
-}
